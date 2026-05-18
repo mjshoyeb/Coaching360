@@ -100,35 +100,44 @@
                 </div>
             </div>
 
-            <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-            
             <table class="table table-hover mt-3">
                 <thead class="table-light">
                     <tr>
                         <th>ID</th>
                         <th>Name</th>
                         <th>Phone</th>
-                        <th>Status</th>
+                        <th>QR Code</th> <th>Status</th>
                     </tr>
-                    <tbody>
-                {% for std in students %}
-                <tr>
-                    <td>{{ std.id }}</td>
-                    <td>{{ std.full_name }}</td>
-                    <td>{{ std.phone }}</td>
-                    <td><span class="badge bg-success">Active</span></td>
-                </tr>
-                {% endfor %}
-            </tbody>
                 </thead>
                 <tbody>
+                    {% for std in students %}
                     <tr>
-                        <td colspan="4" class="text-center">Fetching latest data...</td>
+                        <td>{{ std.id }}</td>
+                        <td>{{ std.full_name }}</td>
+                        <td>{{ std.phone }}</td>
+                        
+                        <td>
+                            {% if std.qr_code_uid %}
+                            <a href="/static/qrcodes/{{ std.qr_code_uid }}.png" target="_blank">
+                                <img src="/static/qrcodes/{{ std.qr_code_uid }}.png" alt="QR" style="width: 35px; height: 35px; border: 1px solid #ccc; padding: 2px; border-radius: 4px;">
+                            </a>
+                            {% else %}
+                            <span class="text-muted" style="font-size: 13px;">No QR</span>
+                            {% endif %}
+                        </td>
+                        
+                        <td><span class="badge bg-success">Active</span></td>
                     </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted">No students found.</td>
+                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

@@ -24,6 +24,7 @@ def register_user(email: str, password: str, role: str):
 
 
 import uuid # QR কোডের জন্য ইউনিক আইডি জেনারেট করতে
+from core.qr_generator import generate_student_qr # QR কোড জেনারেট করার ফাংশন ইমপোর্ট করা হচ্ছে
 
 def enroll_student(email: str, password: str, full_name: str, phone: str):
     conn = get_db_connection()
@@ -50,12 +51,15 @@ def enroll_student(email: str, password: str, full_name: str, phone: str):
         """
         cursor.execute(student_query, (user_id, full_name, phone, qr_uid))
 
-        # ৪. সবকিছু ঠিক থাকলে সেভ করো
+        # ৪. ডাটাবেজে সবকিছু ঠিক থাকলে সেভ করো (Commit)
         conn.commit()
         print(f"✅ Success: Student {full_name} enrolled and account created!")
 
+        # 🚀 ৫. ডাটাবেজে সেভ হওয়ার পর আসল QR Code ইমেজটি জেনারেট করা হচ্ছে
+        generate_student_qr(qr_uid)
+
     except Exception as e:
-        # ৫. কোনো ভুল হলে আগের সব কাজ বাতিল করো (Rollback)
+        # কোনো ভুল হলে আগের সব কাজ বাতিল করো (Rollback)
         conn.rollback()
         print(f"❌ Error during enrollment: {e}")
     finally:
