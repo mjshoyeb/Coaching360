@@ -26,6 +26,7 @@ def register_user(email: str, password: str, role: str):
 import uuid # QR কোডের জন্য ইউনিক আইডি জেনারেট করতে
 from core.qr_generator import generate_student_qr # QR কোড জেনারেট করার ফাংশন ইমপোর্ট করা হচ্ছে
 
+# স্টুডেন্টকে রেজিস্টার করে ডাটাবেজে সেভ করে এবং QR কোড জেনারেট করে
 def enroll_student(email: str, password: str, full_name: str, phone: str):
     conn = get_db_connection()
     if not conn: return
@@ -66,6 +67,7 @@ def enroll_student(email: str, password: str, full_name: str, phone: str):
         cursor.close()
         conn.close()
 
+# শিডিউল কনফ্লিক্ট চেক করার ফাংশন
 def check_schedule_conflict(room_no: str, day: str, start_time: str, end_time: str, teacher_id: int) -> bool:
     """
     একই সময়ে একই রুমে বা একই টিচারের অন্য ক্লাস আছে কিনা চেক করে।
@@ -96,6 +98,7 @@ def check_schedule_conflict(room_no: str, day: str, start_time: str, end_time: s
     
     return result is not None # রেজাল্ট থাকলে কনফ্লিক্ট আছে (True)
 
+# ইউজারকে ইমেইল এবং পাসওয়ার্ড দিয়ে ডাটাবেজে খুঁজে বের করে রিটার্ন করে
 def add_schedule(batch_id: int, room_no: str, day: str, start: str, end: str):
     """
     নতুন শিডিউল যোগ করার আগে কনফ্লিক্ট চেক করে এবং ডাটাবেজে সেভ করে।
@@ -188,3 +191,152 @@ def get_total_counts():
         cursor.close()
         conn.close()
     return counts
+
+# স্টুডেন্ট আইডি নিয়ে স্টুডেন্ট এবং তার সাথে যুক্ত ইউজার অ্যাকাউন্ট ডিলিট করে
+def delete_student_by_id(student_id: int):
+    """স্টুডেন্ট আইডি নিয়ে স্টুডেন্ট এবং তার সাথে যুক্ত ইউজার অ্যাকাউন্ট ডিলিট করে।"""
+    conn = get_db_connection()
+    if not conn: return False
+
+    cursor = conn.cursor()
+    try:
+        conn.start_transaction()
+
+        # ১. প্রথমে স্টুডেন্টের user_id খুঁজে বের করা (users টেবিল থেকে ডিলিট করার জন্য)
+        cursor.execute("SELECT user_id, qr_code_uid FROM students WHERE id = %s", (student_id,))
+        result = cursor.fetchone()
+        
+        if result:
+            user_id = result[0]
+            qr_code_uid = result[1]
+
+            # ২. স্টুডেন্ট টেবিল থেকে ডিলিট করা
+            cursor.execute("DELETE FROM students WHERE id = %s", (student_id,))
+
+            # ৩. ইউজার টেবিল থেকে ডিলিট করা
+            cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
+
+            conn.commit()
+            
+            # (ঐচ্ছিক) ফিজিক্যাল QR কোড ইমেজ ফাইলটি ফোল্ডার থেকে ডিলিট করা
+            import os
+            qr_path = f"static/qrcodes/{qr_code_uid}.png"
+            if os.path.exists(qr_path):
+                os.remove(qr_path)
+                
+            print(f"🗑️ Student ID {student_id} and their user account deleted!")
+            return True
+        return False
+
+    except Exception as e:
+        conn.rollback()
+        print(f"❌ Error during student deletion: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+# টিচারদের তালিকা নিয়ে আসে (এডমিন প্যানেলে দেখানোর জন্য)   
+def get_all_teachers():
+    """ডাটাবেজ থেকে রোল 'teacher' ওয়ালা সব ইউজারের তালিকা নিয়ে আসে।"""
+    conn = get_db_connection()
+    if not conn: return []
+
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # শুধুমাত্র যাদের রোল teacher তাদের ইমেইল, আইডি এবং রোল আনা হচ্ছে
+        cursor.execute("SELECT id, email, role FROM users WHERE role = 'teacher'")
+        teachers = cursor.fetchall()
+        return teachers
+    except Exception as e:
+        print(f"❌ Error fetching teachers: {e}")
+        return []
+    finally:
+        cursor.close()
+        conn.close()
+
+# সব ব্যাচের তালিকা এবং অ্যাসাইনড টিচারের ইমেইল নিয়ে আসে (এডমিন প্যানেলে দেখানোর জন্য)
+def get_all_batches():
+    """ডাটাবেজ থেকে সব ব্যাচের তালিকা এবং অ্যাসাইনড টিচারের ইমেইল নিয়ে আসে।"""
+    conn = get_db_connection()
+    if not conn: return []
+
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # batches টেবিলের সাথে users (teacher) টেবিল জয়েন করে ডাটা আনা হচ্ছে
+        query = """
+            SELECT b.id, b.batch_name, u.email as teacher_email 
+            FROM batches b
+            LEFT JOIN users u ON b.teacher_id = u.id
+        """
+        cursor.execute(query)
+        batches = cursor.fetchall()
+        return batches
+    except Exception as e:
+        print(f"❌ Error fetching batches: {e}")
+        return []
+    finally:
+        cursor.close()
+        conn.close()
+
+def create_batch(batch_name: str, teacher_id: int):
+    """নতুন ব্যাচ তৈরি করে এবং নির্দিষ্ট টিচার আইডি সেট করে।"""
+    conn = get_db_connection()
+    if not conn: return False
+
+    cursor = conn.cursor()
+    try:
+        query = "INSERT INTO batches (batch_name, teacher_id) VALUES (%s, %s)"
+        cursor.execute(query, (batch_name, teacher_id))
+        conn.commit()
+        print(f"✅ Batch '{batch_name}' created successfully!")
+        return True
+    except Exception as e:
+        print(f"❌ Error creating batch: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+# সব শিডিউল, ব্যাচের নাম এবং টিচারের ইমেইল জয়েন করে নিয়ে আসে (এডমিন প্যানেলে দেখানোর জন্য)
+def get_all_schedules():
+    """ডাটাবেজ থেকে সব শিডিউল, ব্যাচের নাম এবং টিচারের ইমেইল জয়েন করে নিয়ে আসে।"""
+    conn = get_db_connection()
+    if not conn: return []
+
+    cursor = conn.cursor(dictionary=True)
+    try:
+        query = """
+            SELECT s.id, b.batch_name, u.email as teacher_email, s.class_time, s.room_number 
+            FROM schedules s
+            JOIN batches b ON s.batch_id = b.id
+            JOIN users u ON b.teacher_id = u.id
+        """
+        cursor.execute(query)
+        schedules = cursor.fetchall()
+        return schedules
+    except Exception as e:
+        print(f"❌ Error fetching schedules: {e}")
+        return []
+    finally:
+        cursor.close()
+        conn.close()
+
+def create_schedule(batch_id: int, class_time: str, room_number: str):
+    """নতুন ক্লাসের শিডিউল ডাটাবেজে সেভ করে।"""
+    conn = get_db_connection()
+    if not conn: return False
+
+    cursor = conn.cursor()
+    try:
+        query = "INSERT INTO schedules (batch_id, class_time, room_number) VALUES (%s, %s, %s)"
+        cursor.execute(query, (batch_id, class_time, room_number))
+        conn.commit()
+        print(f"✅ Schedule created successfully!")
+        return True
+    except Exception as e:
+        print(f"❌ Error creating schedule: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
